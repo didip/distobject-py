@@ -1,8 +1,13 @@
 import os
+import sys
 import threading
 import time
 import pytest
 import redis
+
+# Fix: Add project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from distobject import distobject
 
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
@@ -13,14 +18,16 @@ def redis_client():
     yield client
     client.flushdb()
 
-@distobject(redis_client=redis_client)
 class User:
     def __init__(self, name, email):
         self.name = name
         self.email = email
 
 def test_stress_concurrent_updates(redis_client):
-    user = User(name="Base", email="base@example.com")
+    # Decorate the User class dynamically
+    DistributedUser = distobject(redis_client)(User)
+
+    user = DistributedUser(name="Base", email="base@example.com")
     user.save()
     user_id = user.get_id()
 
@@ -29,12 +36,11 @@ def test_stress_concurrent_updates(redis_client):
 
     def worker(index):
         try:
-            u = User.load(user_id)
+            u = DistributedUser.load(user_id)
             u.name = f"User {index}"
             u.email = f"user{index}@example.com"
-            time.sleep(0.01)  # Simulate small delay
+            time.sleep(0.01)
             u.save()
-
             with lock:
                 results.append(f"Success-{index}")
         except Exception as e:
@@ -50,13 +56,11 @@ def test_stress_concurrent_updates(redis_client):
     for t in threads:
         t.join()
 
-    # Reload the user after all threads finish
-    final_user = User.load(user_id)
+    final_user = DistributedUser.load(user_id)
 
     print(f"Final user.name: {final_user.name}")
     print(f"Final user.email: {final_user.email}")
 
-    # Assertions
     assert final_user.name.startswith("User ")
     assert final_user.email.startswith("user") and final_user.email.endswith("@example.com")
     assert len(results) == 100

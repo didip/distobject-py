@@ -99,7 +99,7 @@ Run tests:
 pytest tests/
 
 # with Docker Compose
-docker-compose up --build
+docker compose up --build --abort-on-container-exit --exit-code-from test-runner
 ```
 
 ## License
