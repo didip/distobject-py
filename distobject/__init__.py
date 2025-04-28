@@ -1,1 +1,1 @@
-from .decorators import distobject
+from .core import DistObject

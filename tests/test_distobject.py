@@ -1,87 +1,68 @@
-import os
-import sys
+import asyncio
 import pytest
-import redis
-import re
+from distobject import DistObject
+from examples.models import User
 
-# Add project root to sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+@pytest.fixture
+async def redis():
+    r = await DistObject.connect("redis://redis:6379")
+    yield r
+    await r.close()
 
-from distobject import distobject
+@pytest.mark.asyncio
+async def test_save_new_object(redis):
+    user = User(name="Alice", email="alice@example.com")
+    dist = DistObject(redis, user, prefix="user", channel="user-updates")
+    await dist.save()
 
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
+    assert dist.id is not None
 
-@pytest.fixture(scope="module")
-def redis_client():
-    client = redis.Redis(decode_responses=True, host=REDIS_HOST, port=6379, db=15)
-    yield client
-    client.flushdb()
+    data = await redis.hgetall(dist.id)
+    assert data["name"] == "Alice"
+    assert data["email"] == "alice@example.com"
 
-class User:
-    def __init__(self, name, email):
-        self.name = name
-        self.email = email
+@pytest.mark.asyncio
+async def test_partial_update(redis):
+    user = User(name="Bob", email="bob@example.com")
+    dist = DistObject(redis, user, prefix="user", channel="user-updates")
+    await dist.save()
 
-def test_save_load_user(redis_client):
-    DistributedUser = distobject(redis_client)(User)
+    # Update email only
+    new_user = User(name="Bob", email="newbob@example.com")
+    dist.update(new_user)
+    await dist.save()
 
-    user = DistributedUser(name="Alice", email="alice@example.com")
-    user.save()
+    data = await redis.hgetall(dist.id)
+    assert data["name"] == "Bob"
+    assert data["email"] == "newbob@example.com"
 
-    # --- Check object fields after save() ---
+@pytest.mark.asyncio
+async def test_load_existing_object(redis):
+    user = User(name="Charlie", email="charlie@example.com")
+    dist = DistObject(redis, user, prefix="user", channel="user-updates")
+    await dist.save()
 
-    # Basic fields
-    assert user.get_id() is not None
-    assert redis_client.exists(user.get_id())
+    # Load into a fresh object
+    dist2 = DistObject(redis, None, prefix="user", channel="user-updates")
+    loaded_user = await dist2.load(dist.id, User)
 
-    # Internal fields
-    assert hasattr(user, '_original_data')
-    assert hasattr(user, '_changed_fields')
-    assert hasattr(user, '_redis_key')
+    assert loaded_user.name == "Charlie"
+    assert loaded_user.email == "charlie@example.com"
 
-    # _original_data must contain key fields
-    for key in ["name", "email", "created_at", "updated_at"]:
-        assert key in user._original_data
+@pytest.mark.asyncio
+async def test_listener_updates_object(redis):
+    user = User(name="Dan", email="dan@example.com")
+    dist = DistObject(redis, user, prefix="user", channel="user-updates")
+    await dist.save()
 
-    # Field types
-    assert isinstance(user._original_data["name"], str)
-    assert isinstance(user._original_data["email"], str)
-    assert re.match(r"^\d+$", user._original_data["created_at"])
-    assert re.match(r"^\d+$", user._original_data["updated_at"])
+    from distobject.listener import start_listener
+    await start_listener(dist)
 
-    # Dirty tracking
-    assert isinstance(user._changed_fields, set)
-    assert len(user._changed_fields) == 0  # No dirty fields after save
+    # Simulate external update
+    await asyncio.sleep(1)
+    await redis.hset(dist.id, mapping={"email": "updateddan@example.com"})
+    await redis.publish(dist.channel, '{"id": "' + dist.id + '", "changes": {"email": "updateddan@example.com"}}')
 
-    # Redis key structure
-    assert user.get_id().startswith("user:")
+    await asyncio.sleep(2)
 
-    # --- Load object back ---
-
-    loaded_user = DistributedUser.load(user.get_id())
-
-    # Internal fields
-    assert hasattr(loaded_user, '_original_data')
-    assert hasattr(loaded_user, '_changed_fields')
-    assert hasattr(loaded_user, '_redis_key')
-
-    # _original_data must contain key fields
-    for key in ["name", "email", "created_at", "updated_at"]:
-        assert key in loaded_user._original_data
-
-    # Field types
-    assert isinstance(loaded_user._original_data["name"], str)
-    assert isinstance(loaded_user._original_data["email"], str)
-    assert re.match(r"^\d+$", loaded_user._original_data["created_at"])
-    assert re.match(r"^\d+$", loaded_user._original_data["updated_at"])
-
-    # Dirty tracking
-    assert isinstance(loaded_user._changed_fields, set)
-    assert len(loaded_user._changed_fields) == 0  # No dirty fields after load
-
-    # Redis key structure
-    assert loaded_user.get_id().startswith("user:")
-
-    # Field values
-    assert loaded_user.name == "Alice"
-    assert loaded_user.email == "alice@example.com"
+    assert dist.obj.email == "updateddan@example.com"

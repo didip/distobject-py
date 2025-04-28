@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install git for cloning (optional if you pull dependencies)
+# Install git if needed
 RUN apt-get update && apt-get install -y git
 
 WORKDIR /app
@@ -8,11 +8,15 @@ WORKDIR /app
 # Copy source
 COPY distobject/ distobject/
 COPY examples/ examples/
+COPY tests/ tests/
 COPY setup.py .
 
 # Install as editable package
 RUN pip install --upgrade pip
 RUN pip install -e .
 
-# Default command: run the main async example
-CMD ["python3", "examples/main.py"]
+# Install testing libraries
+RUN pip install pytest pytest-asyncio
+
+# Default command: run all tests
+CMD ["pytest", "tests/"]
