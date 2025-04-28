@@ -97,6 +97,9 @@ Run tests:
 
 ```bash
 pytest tests/
+
+# with Docker Compose
+docker-compose up --build
 ```
 
 ## License
@@ -110,11 +113,4 @@ This project is licensed under the MIT License.
 * ulid-py — Python ULID generator
 
 * pytest — Testing framework
-
-
-## About This Project
-
-All code was produced by ChatGPT (OpenAI).
-The architecture, ideas, and corrections were provided by a human developer.
-This project showcases what AI can achieve when guided thoughtfully.
 
