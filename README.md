@@ -1,9 +1,10 @@
 # distobject-py
 
-![distobject](https://github.com/user-attachments/assets/34fb2c63-538f-4faf-bc18-45ad7d8d5004)
-
 [![Build Status](https://img.shields.io/github/actions/workflow/status/didip/distobject-py/python-tests.yml?branch=main)](https://github.com/didip/distobject-py/actions)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+
+![distobject](https://github.com/user-attachments/assets/5c1431b6-11fe-4924-a587-788b29fff045)
+
 
 ---
 
